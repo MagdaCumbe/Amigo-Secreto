@@ -118,7 +118,7 @@ btnDraw.onclick = draw;
 
 checkDrawDone();
 
-/* ➕ CADASTRO + WHATSAPP */
+/* ➕ CADASTRO + WHATSAPP COM BLOQUEIO DE DUPLICADOS */
 async function addParticipant() {
   const configRef = doc(db,"config","status");
   const drawStatus = await getDoc(configRef);
@@ -132,6 +132,17 @@ async function addParticipant() {
     return;
   }
 
+  const phone = whatsappInput.value.replace(/\D/g,"");
+
+  // Verifica se o número já está cadastrado
+  const snap = await getDocs(collection(db,"participants"));
+  const exists = snap.docs.some(d => d.data().whatsapp.replace(/\D/g,"") === phone);
+  if(exists){
+    alert("❌ Este número já está cadastrado!");
+    return;
+  }
+
+  // Cadastro
   const docRef = await addDoc(collection(db,"participants"),{
     name: nameInput.value,
     whatsapp: whatsappInput.value,
@@ -140,8 +151,6 @@ async function addParticipant() {
 
   const link = `${location.origin}${location.pathname}?id=${docRef.id}`;
   const text = `🎁 Amigo Secreto\n\nOlá, ${nameInput.value}!\nSeu link secreto: ${link}\nGuarde bem 😉`;
-
-  const phone = whatsappInput.value.replace(/\D/g,"");
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   window.open(url,"_blank");
 
