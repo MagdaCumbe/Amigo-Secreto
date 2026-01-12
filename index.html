@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Amigo Secreto</title>
+
+<style>
+body {
+  background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Arial, sans-serif;
+  color: white;
+  overflow: hidden;
+}
+.container {
+  background: rgba(255,255,255,0.1);
+  padding: 30px;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+  position: relative;
+}
+input, button {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: none;
+}
+input {
+  background: rgba(255,255,255,0.2);
+  color: white;
+}
+button {
+  background: #00d2ff;
+  font-weight: bold;
+  cursor: pointer;
+}
+button:hover { opacity: 0.85; }
+small { opacity: 0.8; }
+.disabled { opacity: 0.5; pointer-events: none; }
+
+/* Animação de luzes piscando */
+.light {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: blink 1.2s infinite alternate;
+}
+@keyframes blink {
+  0% { opacity: 0; transform: scale(0.5); }
+  100% { opacity: 1; transform: scale(1.5); }
+}
+</style>
+</head>
+<body>
+
+<div class="container" id="app">
+  <h2>🎁 Amigo Secreto</h2>
+
+  <input id="name" placeholder="Nome">
+  <input id="whatsapp" placeholder="WhatsApp (+258...)">
+  <input id="g1" placeholder="Presente 1">
+  <input id="g2" placeholder="Presente 2">
+  <input id="g3" placeholder="Presente 3">
+
+  <button id="btnAdd">Cadastrar e enviar link</button>
+  <button id="btnDraw">Sortear (organizador)</button>
+
+  <div id="msg"></div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  updateDoc,
+  getDoc,
+  setDoc
+} from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+/* 🔐 CONFIGURAÇÃO FIREBASE */
+const firebaseConfig = {
+  apiKey: "AIzaSyBiS7VURTZ3EedRM5IwxCjLmFsRiwp5_Os",
+  authDomain: "amigo-secreto-5daa9.firebaseapp.com",
+  projectId: "amigo-secreto-5daa9",
+  storageBucket: "amigo-secreto-5daa9.firebasestorage.app",
+  messagingSenderId: "962713432082",
+  appId: "1:962713432082:web:f2116cd16ba5cc6fa728cb"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+/* ELEMENTOS */
+const nameInput = document.getElementById("name");
+const whatsappInput = document.getElementById("whatsapp");
+const g1 = document.getElementById("g1");
+const g2 = document.getElementById("g2");
+const g3 = document.getElementById("g3");
+const msg = document.getElementById("msg");
+const btnAdd = document.getElementById("btnAdd");
+const btnDraw = document.getElementById("btnDraw");
+
+/* SENHA DO ORGANIZADOR */
+const organizerPassword = "190908";
+
+btnAdd.onclick = addParticipant;
+btnDraw.onclick = draw;
+
+checkDrawDone();
+
+/* ➕ CADASTRO + WHATSAPP */
+async function addParticipant() {
+  const configRef = doc(db,"config","status");
+  const drawStatus = await getDoc(configRef);
+  if(drawStatus.exists() && drawStatus.data().drawDone){
+    alert("❌ Cadastro bloqueado. Sorteio já realizado.");
+    return;
+  }
+
+  if(!nameInput.value || !whatsappInput.value){
+    alert("Preencha nome e WhatsApp");
+    return;
+  }
+
+  const docRef = await addDoc(collection(db,"participants"),{
+    name: nameInput.value,
+    whatsapp: whatsappInput.value,
+    gifts: [g1.value, g2.value, g3.value]
+  });
+
+  const link = `${location.origin}${location.pathname}?id=${docRef.id}`;
+  const text = `🎁 Amigo Secreto\n\nOlá, ${nameInput.value}!\nSeu link secreto: ${link}\nGuarde bem 😉`;
+
+  const phone = whatsappInput.value.replace(/\D/g,"");
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  window.open(url,"_blank");
+
+  msg.innerHTML = "✅ Cadastro feito! Link enviado no WhatsApp.";
+  clear();
+}
+
+function clear(){
+  nameInput.value = "";
+  whatsappInput.value = "";
+  g1.value = "";
+  g2.value = "";
+  g3.value = "";
+}
+
+/* 🎲 SORTEIO (com senha e bloqueio) */
+async function draw(){
+  const configRef = doc(db,"config","status");
+  const drawStatus = await getDoc(configRef);
+  if(drawStatus.exists() && drawStatus.data().drawDone){
+    alert("❌ Sorteio já realizado.");
+    return;
+  }
+
+  const pass = prompt("Digite a senha do organizador:");
+  if(pass !== organizerPassword){
+    alert("❌ Senha incorreta.");
+    return;
+  }
+
+  const snap = await getDocs(collection(db,"participants"));
+  let users = snap.docs.map(d=>({id:d.id,...d.data()}));
+  if(users.length < 2){
+    alert("Mínimo de 2 participantes");
+    return;
+  }
+
+  users = users.sort(()=>Math.random()-0.5);
+
+  for(let i=0;i<users.length;i++){
+    const drawn = users[(i+1)%users.length];
+    await updateDoc(doc(db,"participants",users[i].id),{
+      drawn:{name:drawn.name,gifts:drawn.gifts}
+    });
+  }
+
+  await setDoc(configRef,{drawDone:true});
+  msg.innerHTML = "🎉 Sorteio realizado! Cadastro bloqueado.";
+  btnAdd.classList.add("disabled");
+}
+
+/* 🔍 RESULTADO INDIVIDUAL COM LUZES PISCANDO */
+async function checkResult(){
+  const id = new URLSearchParams(location.search).get("id");
+  if(!id) return;
+
+  const snap = await getDoc(doc(db,"participants",id));
+  if(!snap.exists()) return;
+
+  const p = snap.data();
+
+  if(!p.drawn){
+    document.body.innerHTML = `
+      <div class="container">
+        <h2>⏳ Aguarde</h2>
+        <p>O sorteio ainda não foi realizado.</p>
+      </div>
+    `;
+    return;
+  }
+
+  document.body.innerHTML = `
+    <div class="container">
+      <h2>🎉 Seu Amigo Secreto</h2>
+      <h3>${p.drawn.name}</h3>
+      <p>🎁 Sugestões:</p>
+      <ul>
+        ${p.drawn.gifts.map(g=>`<li>${g}</li>`).join("")}
+      </ul>
+    </div>
+  `;
+
+  // Cria 15 luzes piscando
+  for(let i=0;i<15;i++){
+    const light = document.createElement("div");
+    light.classList.add("light");
+    light.style.width = light.style.height = `${Math.random()*20+10}px`;
+    light.style.top = `${Math.random()*90}%`;
+    light.style.left = `${Math.random()*90}%`;
+    light.style.background = `hsl(${Math.random()*360},100%,70%)`;
+    document.body.appendChild(light);
+  }
+}
+
+async function checkDrawDone(){
+  const drawStatus = await getDoc(doc(db,"config","status"));
+  if(drawStatus.exists() && drawStatus.data().drawDone){
+    btnAdd.classList.add("disabled");
+  }
+}
+
+checkResult();
+</script>
+
+</body>
+</html>
